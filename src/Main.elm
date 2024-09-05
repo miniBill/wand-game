@@ -115,7 +115,28 @@ initHealth =
     { north = 3
     , east = 3
     , south = 3
-    , west = 3
+    , west = 0
+    }
+
+
+emptyShot : Shot
+emptyShot =
+    { north = Nothing
+    , east = Nothing
+    , south = Nothing
+    , west = Nothing
+    }
+
+
+emptyRound : Round
+emptyRound =
+    { initialWands =
+        { kill = North
+        , heal = East
+        , shield = South
+        , neutral = West
+        }
+    , shots = []
     }
 
 
@@ -205,7 +226,7 @@ innerViewRound model index round health =
                 (\newWands ->
                     { round | initialWands = newWands }
                 )
-        , viewShot model round 0 round.shots True health []
+        , viewShot model round 0 round.shots True health health []
             |> column [ width fill ]
         ]
         |> Element.map
@@ -221,15 +242,6 @@ innerViewRound model index round health =
             )
     , List.length round.shots == 4
     )
-
-
-emptyShot : Shot
-emptyShot =
-    { north = Nothing
-    , east = Nothing
-    , south = Nothing
-    , west = Nothing
-    }
 
 
 viewInitialWands :
@@ -261,8 +273,7 @@ viewInitialWands model wands =
                     Input.labelLeft [ width (px 120) ]
                         (row []
                             [ wandKind
-                            , text
-                                (wandName model.wands)
+                            , text (wandName model.wands)
                             ]
                         )
                 , onChange = \newPlayer -> setter newPlayer
@@ -292,13 +303,14 @@ viewShot :
     -> List Shot
     -> Bool
     -> Health
+    -> Health
     -> List (Element Round)
     -> List (Element Round)
-viewShot model round index shots pastShotComplete health acc =
+viewShot model round index shots pastShotComplete initialRoundHealth health acc =
     case shots of
         [] ->
             if pastShotComplete then
-                viewShot model round index [ emptyShot ] False health acc
+                viewShot model round index [ emptyShot ] False initialRoundHealth health acc
 
             else
                 List.reverse acc
@@ -306,9 +318,9 @@ viewShot model round index shots pastShotComplete health acc =
         head :: tail ->
             let
                 ( newHealth, elements, isComplete ) =
-                    innerViewShot model round index head health
+                    innerViewShot model round index initialRoundHealth head health
             in
-            viewShot model round (index + 1) tail isComplete newHealth (elements :: acc)
+            viewShot model round (index + 1) tail isComplete initialRoundHealth newHealth (elements :: acc)
 
 
 innerViewShot :
@@ -317,8 +329,9 @@ innerViewShot :
     -> Int
     -> Shot
     -> Health
+    -> Health
     -> ( Health, Element Round, Bool )
-innerViewShot model round index shot healths =
+innerViewShot model round index shot initialRoundHealth healths =
     let
         iif : Int -> a -> Maybe a
         iif c v =
@@ -335,7 +348,7 @@ innerViewShot model round index shot healths =
             -> (Maybe Player -> msg)
             -> Maybe (Element msg)
         viewShotPlayer playerName health getter setter =
-            iif (health healths) <|
+            iif (health initialRoundHealth) <|
                 Input.radioRow
                     [ spacing
                     , width fill
@@ -345,10 +358,10 @@ innerViewShot model round index shot healths =
                             (text (playerName model.players))
                     , onChange = \newPlayer -> setter newPlayer
                     , options =
-                        [ iif healths.north ( Just North, model.players.north )
-                        , iif healths.east ( Just East, model.players.east )
-                        , iif healths.south ( Just South, model.players.south )
-                        , iif healths.west ( Just West, model.players.west )
+                        [ iif initialRoundHealth.north ( Just North, model.players.north )
+                        , iif initialRoundHealth.east ( Just East, model.players.east )
+                        , iif initialRoundHealth.south ( Just South, model.players.south )
+                        , iif initialRoundHealth.west ( Just West, model.players.west )
                         , iif 1 ( Nothing, "Air" )
                         ]
                             |> List.filterMap identity
@@ -383,18 +396,6 @@ innerViewShot model round index shot healths =
             )
     , index < 3
     )
-
-
-emptyRound : Round
-emptyRound =
-    { initialWands =
-        { kill = North
-        , heal = East
-        , shield = South
-        , neutral = West
-        }
-    , shots = []
-    }
 
 
 viewPlayers : Model -> Element Msg
