@@ -10,8 +10,12 @@ import Icons
 import List.Extra
 
 
-
--- wand order:
+type alias Health =
+    { north : Int
+    , east : Int
+    , south : Int
+    , west : Int
+    }
 
 
 type alias Model =
@@ -23,8 +27,8 @@ type alias Model =
 
 type alias PlayerNames =
     { north : String
-    , south : String
     , east : String
+    , south : String
     , west : String
     }
 
@@ -107,6 +111,15 @@ initPlayers =
     }
 
 
+initHealth : Health
+initHealth =
+    { north = 3
+    , east = 3
+    , south = 3
+    , west = 3
+    }
+
+
 column : List (Attribute msg) -> List (Element msg) -> Element msg
 column attrs =
     Element.column (spacing :: attrs)
@@ -134,59 +147,75 @@ padding =
 
 view : Model -> Element Msg
 view model =
-    column [ width fill, height fill ]
+    column
+        [ width fill, height fill ]
         [ wrappedRow [ width fill ]
             [ viewPlayers model
             , viewWands model
             ]
-        , (model.rounds ++ [ emptyRound ])
-            |> List.indexedMap
-                (\index round ->
-                    column
-                        (if index == List.length model.rounds then
-                            [ Border.width 1
-                            , padding
-                            , Background.color (rgb 0.8 0.8 0.8)
-                            ]
-
-                         else
-                            [ Border.width 1
-                            , padding
-                            ]
-                        )
-                        [ el [ Font.bold ]
-                            (text ("Round " ++ String.fromInt (index + 1)))
-                        , viewRound model.players model.wands round
-                            |> Element.map
-                                (\newRound ->
-                                    { model
-                                        | rounds =
-                                            if index == List.length model.rounds then
-                                                model.rounds ++ [ newRound ]
-
-                                            else
-                                                List.Extra.setAt index newRound model.rounds
-                                    }
-                                )
-                        ]
-                )
+        , viewRound model 0 model.rounds True initHealth []
             |> column [ width fill, height fill, scrollbarY ]
         ]
 
 
-viewRound : PlayerNames -> WandNames -> Round -> Element Round
-viewRound playerNames wandNames round =
-    column []
-        [ viewInitialWands playerNames wandNames round.initialWands
+viewRound :
+    Model
+    -> Int
+    -> List Round
+    -> Bool
+    -> Health
+    -> List (Element Msg)
+    -> List (Element Msg)
+viewRound model index rounds pastRoundComplete health acc =
+    case rounds of
+        [] ->
+            if Debug.log "pastRoundComplete" pastRoundComplete then
+                viewRound model index [ emptyRound ] False health acc
+
+            else
+                List.reverse acc
+
+        head :: tail ->
+            let
+                ( newHealth, elements, isComplete ) =
+                    innerViewRound model index head health
+            in
+            viewRound model (index + 1) tail isComplete newHealth (elements :: acc)
+
+
+innerViewRound :
+    Model
+    -> Int
+    -> Round
+    -> Health
+    ->
+        ( Health
+        , Element Msg
+        , Bool
+        )
+innerViewRound model index round health =
+    ( health
+    , column
+        [ Border.width 1
+        , padding
+        ]
+        [ el [ Font.bold ]
+            (text ("Round " ++ String.fromInt (index + 1)))
+        , viewInitialWands model round.initialWands
             |> Element.map
                 (\newWands ->
                     { round | initialWands = newWands }
                 )
-        , (round.shots ++ [ emptyShot ])
+        , (if List.length round.shots == 4 then
+            round.shots
+
+           else
+            round.shots ++ [ emptyShot ]
+          )
             |> List.indexedMap
-                (\index shot ->
+                (\subindex shot ->
                     column
-                        (if index == List.length round.shots then
+                        (if subindex == List.length round.shots then
                             [ Border.width 1
                             , padding
                             , Background.color (rgb 0.8 0.8 0.8)
@@ -197,23 +226,36 @@ viewRound playerNames wandNames round =
                             , padding
                             ]
                         )
-                        [ text ("Shot " ++ String.fromInt (index + 1))
-                        , viewShot playerNames shot
+                        [ text ("Shot " ++ String.fromInt (subindex + 1))
+                        , viewShot model.players shot
                             |> Element.map
                                 (\newShot ->
                                     { round
                                         | shots =
-                                            if index == List.length round.shots then
+                                            if subindex == List.length round.shots then
                                                 round.shots ++ [ newShot ]
 
                                             else
-                                                List.Extra.setAt index newShot round.shots
+                                                List.Extra.setAt subindex newShot round.shots
                                     }
                                 )
                         ]
                 )
             |> column [ width fill ]
         ]
+        |> Element.map
+            (\newRound ->
+                { model
+                    | rounds =
+                        if index == List.length model.rounds then
+                            model.rounds ++ [ newRound ]
+
+                        else
+                            List.Extra.setAt index newRound model.rounds
+                }
+            )
+    , List.length round.shots == 4
+    )
 
 
 emptyShot : Shot
@@ -226,8 +268,7 @@ emptyShot =
 
 
 viewInitialWands :
-    PlayerNames
-    -> WandNames
+    Model
     ->
         { kill : Player
         , heal : Player
@@ -241,7 +282,7 @@ viewInitialWands :
             , shield : Player
             , neutral : Player
             }
-viewInitialWands playerNames wandNames wands =
+viewInitialWands model wands =
     let
         viewInitialWand :
             Element msg
@@ -256,15 +297,15 @@ viewInitialWands playerNames wandNames wands =
                         (row []
                             [ wandKind
                             , text
-                                (wandName wandNames)
+                                (wandName model.wands)
                             ]
                         )
                 , onChange = \newPlayer -> setter newPlayer
                 , options =
-                    [ ( North, playerNames.north )
-                    , ( East, playerNames.east )
-                    , ( South, playerNames.south )
-                    , ( West, playerNames.west )
+                    [ ( North, model.players.north )
+                    , ( East, model.players.east )
+                    , ( South, model.players.south )
+                    , ( West, model.players.west )
                     ]
                         |> List.map (\( value, label ) -> Input.option value (text label))
                 , selected = Just (getter wands)
