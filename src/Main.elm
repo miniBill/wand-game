@@ -1,8 +1,7 @@
 module Main exposing (main)
 
 import Browser
-import Element exposing (Attribute, Element, el, fill, height, px, rgb, scrollbarY, spacing, text, width)
-import Element.Background as Background
+import Element exposing (Attribute, Element, el, fill, height, px, scrollbarY, spacing, text, width)
 import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input
@@ -154,7 +153,7 @@ view model =
             , viewWands model
             ]
         , viewRound model 0 model.rounds True initHealth []
-            |> column [ width fill, height fill, scrollbarY ]
+            |> wrappedRow [ width fill, height fill, scrollbarY ]
         ]
 
 
@@ -169,7 +168,7 @@ viewRound :
 viewRound model index rounds pastRoundComplete health acc =
     case rounds of
         [] ->
-            if Debug.log "pastRoundComplete" pastRoundComplete then
+            if pastRoundComplete then
                 viewRound model index [ emptyRound ] False health acc
 
             else
@@ -206,41 +205,7 @@ innerViewRound model index round health =
                 (\newWands ->
                     { round | initialWands = newWands }
                 )
-        , (if List.length round.shots == 4 then
-            round.shots
-
-           else
-            round.shots ++ [ emptyShot ]
-          )
-            |> List.indexedMap
-                (\subindex shot ->
-                    column
-                        (if subindex == List.length round.shots then
-                            [ Border.width 1
-                            , padding
-                            , Background.color (rgb 0.8 0.8 0.8)
-                            ]
-
-                         else
-                            [ Border.width 1
-                            , padding
-                            ]
-                        )
-                        [ text ("Shot " ++ String.fromInt (subindex + 1))
-                        , viewShot model.players shot
-                            |> Element.map
-                                (\newShot ->
-                                    { round
-                                        | shots =
-                                            if subindex == List.length round.shots then
-                                                round.shots ++ [ newShot ]
-
-                                            else
-                                                List.Extra.setAt subindex newShot round.shots
-                                    }
-                                )
-                        ]
-                )
+        , viewShot model round 0 round.shots True health []
             |> column [ width fill ]
         ]
         |> Element.map
@@ -320,32 +285,104 @@ viewInitialWands model wands =
         ]
 
 
-viewShot : PlayerNames -> Shot -> Element Shot
-viewShot playerNames shot =
+viewShot :
+    Model
+    -> Round
+    -> Int
+    -> List Shot
+    -> Bool
+    -> Health
+    -> List (Element Round)
+    -> List (Element Round)
+viewShot model round index shots pastShotComplete health acc =
+    case shots of
+        [] ->
+            if pastShotComplete then
+                viewShot model round index [ emptyShot ] False health acc
+
+            else
+                List.reverse acc
+
+        head :: tail ->
+            let
+                ( newHealth, elements, isComplete ) =
+                    innerViewShot model round index head health
+            in
+            viewShot model round (index + 1) tail isComplete newHealth (elements :: acc)
+
+
+innerViewShot :
+    Model
+    -> Round
+    -> Int
+    -> Shot
+    -> Health
+    -> ( Health, Element Round, Bool )
+innerViewShot model round index shot healths =
     let
-        viewShotPlayer playerName getter setter =
-            Input.radioRow [ spacing, width fill ]
-                { label =
-                    Input.labelLeft [ width (px 120) ]
-                        (text (playerName playerNames))
-                , onChange = \newPlayer -> setter newPlayer
-                , options =
-                    [ ( Just North, playerNames.north )
-                    , ( Just East, playerNames.east )
-                    , ( Just South, playerNames.south )
-                    , ( Just West, playerNames.west )
-                    , ( Nothing, "Air" )
+        iif : Int -> a -> Maybe a
+        iif c v =
+            if c > 0 then
+                Just v
+
+            else
+                Nothing
+
+        viewShotPlayer :
+            (PlayerNames -> String)
+            -> (Health -> Int)
+            -> (Shot -> Maybe Player)
+            -> (Maybe Player -> msg)
+            -> Maybe (Element msg)
+        viewShotPlayer playerName health getter setter =
+            iif (health healths) <|
+                Input.radioRow
+                    [ spacing
+                    , width fill
                     ]
-                        |> List.map (\( value, label ) -> Input.option value (text label))
-                , selected = Just (getter shot)
-                }
+                    { label =
+                        Input.labelLeft [ width (px 120) ]
+                            (text (playerName model.players))
+                    , onChange = \newPlayer -> setter newPlayer
+                    , options =
+                        [ iif healths.north ( Just North, model.players.north )
+                        , iif healths.east ( Just East, model.players.east )
+                        , iif healths.south ( Just South, model.players.south )
+                        , iif healths.west ( Just West, model.players.west )
+                        , iif 1 ( Nothing, "Air" )
+                        ]
+                            |> List.filterMap identity
+                            |> List.map (\( value, label ) -> Input.option value (text label))
+                    , selected = Just (getter shot)
+                    }
     in
-    column []
-        [ viewShotPlayer .north .north <| \newPlayer -> { shot | north = newPlayer }
-        , viewShotPlayer .east .east <| \newPlayer -> { shot | east = newPlayer }
-        , viewShotPlayer .south .south <| \newPlayer -> { shot | south = newPlayer }
-        , viewShotPlayer .west .west <| \newPlayer -> { shot | west = newPlayer }
+    ( healths
+    , column
+        [ Border.width 1
+        , padding
         ]
+        [ text ("Shot " ++ String.fromInt (index + 1))
+        , [ viewShotPlayer .north .north .north <| \newPlayer -> { shot | north = newPlayer }
+          , viewShotPlayer .east .east .east <| \newPlayer -> { shot | east = newPlayer }
+          , viewShotPlayer .south .south .south <| \newPlayer -> { shot | south = newPlayer }
+          , viewShotPlayer .west .west .west <| \newPlayer -> { shot | west = newPlayer }
+          ]
+            |> List.filterMap identity
+            |> column []
+        ]
+        |> Element.map
+            (\newShot ->
+                { round
+                    | shots =
+                        if index == List.length round.shots then
+                            round.shots ++ [ newShot ]
+
+                        else
+                            List.Extra.setAt index newShot round.shots
+                }
+            )
+    , index < 3
+    )
 
 
 emptyRound : Round
